@@ -274,108 +274,126 @@ if "jawaban_audit" in st.session_state:
         hide_index=True
     )
 
-    # ==============================
-    # DOWNLOAD EXCEL DENGAN GRAFIK
-    # ==============================
+    
+# ==============================
+# DOWNLOAD LAPORAN AUDIT LENGKAP
+# ==============================
 
-    output = io.BytesIO()
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.chart import BarChart, Reference
 
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+output = io.BytesIO()
 
-        pd.DataFrame(
-            [identitas]
-        ).to_excel(
-            writer,
-            sheet_name="Identitas",
-            index=False
+wb = Workbook()
+ws = wb.active
+ws.title = "Laporan Audit"
+
+# JUDUL
+ws.merge_cells("A1:E1")
+ws["A1"] = "LAPORAN AUDIT SISTEM INFORMASI PENJUALAN COBIT 5"
+ws["A1"].font = Font(bold=True, size=14)
+
+# IDENTITAS
+ws["A3"] = "IDENTITAS PENGISI"
+ws["A3"].font = Font(bold=True, size=12)
+
+for row, (key, value) in enumerate(identitas.items(), start=4):
+    ws.cell(row=row, column=1, value=key)
+    ws.cell(row=row, column=2, value=value)
+
+# TABEL JAWABAN
+start = 10
+ws.cell(row=start, column=1, value="HASIL JAWABAN AUDIT")
+ws.cell(row=start, column=1).font = Font(bold=True, size=12)
+
+for col, header in enumerate(df.columns, start=1):
+    cell = ws.cell(row=start + 1, column=col, value=header)
+    cell.font = Font(bold=True)
+    cell.fill = PatternFill("solid", fgColor="D9EAF7")
+
+for r, row in enumerate(df.itertuples(index=False, name=None), start=start + 2):
+    for c, value in enumerate(row, start=1):
+        ws.cell(row=r, column=c, value=value)
+
+# REKAPITULASI
+rekap_start = start + len(df) + 4
+
+ws.cell(row=rekap_start, column=1, value="REKAPITULASI HASIL AUDIT")
+ws.cell(row=rekap_start, column=1).font = Font(bold=True, size=12)
+
+for col, header in enumerate(df_rekap.columns, start=1):
+    cell = ws.cell(row=rekap_start + 1, column=col, value=header)
+    cell.font = Font(bold=True)
+    cell.fill = PatternFill("solid", fgColor="D9EAF7")
+
+for r, row in enumerate(
+    df_rekap.itertuples(index=False, name=None),
+    start=rekap_start + 2
+):
+    for c, value in enumerate(row, start=1):
+        ws.cell(row=r, column=c, value=value)
+
+# GRAFIK DI SHEET KEDUA
+grafik_ws = wb.create_sheet("Grafik")
+
+grafik_ws.append(["Domain", "Ya", "Tidak", "N/A"])
+
+for _, row in df_rekap.iterrows():
+    grafik_ws.append([
+        row["Domain"],
+        int(row["Ya"]),
+        int(row["Tidak"]),
+        int(row["N/A"])
+    ])
+
+chart = BarChart()
+chart.type = "col"
+chart.title = "Grafik Hasil Audit per Domain"
+chart.y_axis.title = "Jumlah Jawaban"
+chart.x_axis.title = "Domain COBIT 5"
+
+chart_data = Reference(
+    grafik_ws,
+    min_col=2,
+    max_col=4,
+    min_row=1,
+    max_row=6
+)
+
+categories = Reference(
+    grafik_ws,
+    min_col=1,
+    min_row=2,
+    max_row=6
+)
+
+chart.add_data(chart_data, titles_from_data=True)
+chart.set_categories(categories)
+grafik_ws.add_chart(chart, "F2")
+
+# RAPATKAN KOLOM
+ws.column_dimensions["A"].width = 18
+ws.column_dimensions["B"].width = 22
+ws.column_dimensions["C"].width = 18
+ws.column_dimensions["D"].width = 75
+ws.column_dimensions["E"].width = 18
+
+for row in ws.iter_rows():
+    for cell in row:
+        cell.alignment = Alignment(
+            vertical="center",
+            wrap_text=True
         )
 
-        df.to_excel(
-            writer,
-            sheet_name="Jawaban Audit",
-            index=False
-        )
+# SIMPAN FILE
+wb.save(output)
+output.seek(0)
 
-        df_rekap.to_excel(
-            writer,
-            sheet_name="Rekapitulasi",
-            index=False
-        )
-
-    # Tambahkan sheet grafik Excel
-    output.seek(0)
-    workbook = load_workbook(output)
-
-    ws = workbook.create_sheet("Grafik")
-
-    ws["A1"] = "REKAPITULASI HASIL AUDIT COBIT 5"
-
-    headers = list(df_rekap.columns)
-
-    for col_num, header in enumerate(headers, start=1):
-        ws.cell(row=3, column=col_num, value=header)
-
-    for row_num, row in enumerate(
-        df_rekap.itertuples(index=False, name=None),
-        start=4
-    ):
-        for col_num, value in enumerate(row, start=1):
-            ws.cell(row=row_num, column=col_num, value=int(value) if hasattr(value, "item") else value)
-
-    chart = BarChart()
-    chart.type = "col"
-    chart.style = 10
-    chart.title = "Grafik Jawaban Audit per Domain"
-    chart.y_axis.title = "Jumlah Jawaban"
-    chart.x_axis.title = "Domain COBIT 5"
-
-    chart_data = Reference(
-        ws,
-        min_col=3,
-        max_col=5,
-        min_row=3,
-        max_row=8
-    )
-
-    categories = Reference(
-        ws,
-        min_col=1,
-        min_row=4,
-        max_row=8
-    )
-
-    chart.add_data(
-        chart_data,
-        titles_from_data=True
-    )
-
-    chart.set_categories(categories)
-    chart.height = 9
-    chart.width = 18
-
-    ws.add_chart(chart, "G3")
-
-    # Lebar kolom
-    for column in ws.columns:
-        max_length = max(
-            len(str(cell.value or ""))
-            for cell in column
-        )
-        ws.column_dimensions[
-            column[0].column_letter
-        ].width = min(max_length + 3, 35)
-
-    final_output = io.BytesIO()
-    workbook.save(final_output)
-    final_output.seek(0)
-
-    st.divider()
-
-    st.header("Unduh Laporan Audit")
-
-    st.download_button(
-        label="📥 Unduh Hasil Audit Excel",
-        data=final_output.getvalue(),
-        file_name="Hasil_Audit_COBIT5.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+st.download_button(
+    label="📥 Unduh Laporan Audit Excel",
+    data=output.getvalue(),
+    file_name="Laporan_Audit_COBIT5.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)  
