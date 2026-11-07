@@ -1,41 +1,53 @@
 import streamlit as st
 import pandas as pd
 import io
+
 from datetime import date
-from openpyxl import load_workbook
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.chart import BarChart, Reference
+from openpyxl.utils import get_column_letter
+
+# ==================================================
+# KONFIGURASI APLIKASI
+# ==================================================
 
 st.set_page_config(
-    page_title="Audit COBIT 5",
+    page_title="Audit COBIT 5 Alammu",
     page_icon="📋",
     layout="wide"
 )
 
-# ==============================
-# HEADER APLIKASI
-# ==============================
+# ==================================================
+# HEADER DAN DESKRIPSI
+# ==================================================
 
 st.title("AUDIT SISTEM INFORMASI PENJUALAN")
-st.subheader("CV Seleksi Alam Muria")
+st.subheader("CV Seleksi Alam Muria (Alammu)")
 
 st.markdown("""
 Aplikasi Audit Sistem Informasi Penjualan berbasis COBIT 5
-merupakan platform digital untuk membantu proses evaluasi
-pengelolaan sistem informasi penjualan pada CV Seleksi Alam
-Muria (Alammu).
+merupakan platform digital yang digunakan untuk membantu
+proses evaluasi pengelolaan sistem informasi penjualan
+pada CV Seleksi Alam Muria (Alammu).
 
-Aplikasi ini menyediakan 30 pertanyaan audit berdasarkan lima
-domain COBIT 5, yaitu EDM, APO, BAI, DSS, dan MEA. Pengguna
-dapat mengisi identitas, memberikan jawaban audit, melihat
-rekapitulasi dalam bentuk tabel dan grafik, serta mengunduh
-hasil audit dalam format Excel.
+Aplikasi ini menyediakan 30 pertanyaan audit berdasarkan
+lima domain COBIT 5, yaitu EDM, APO, BAI, DSS, dan MEA.
+Pengguna dapat mengisi identitas, memberikan jawaban,
+melihat hasil audit melalui tabel dan grafik, serta
+mengunduh laporan dalam format Excel.
 """)
+
+st.info(
+    "Petunjuk: Isi identitas pengisi dan jawab seluruh "
+    "30 pertanyaan dengan memilih Ya, Tidak, atau N/A."
+)
 
 st.divider()
 
-# ==============================
+# ==================================================
 # DATA PERTANYAAN AUDIT
-# ==============================
+# ==================================================
 
 data = [
     ("EDM", "EDM01", "Apakah pihak yang bertanggung jawab melakukan evaluasi terhadap pengelolaan sistem informasi penjualan secara berkala?"),
@@ -74,29 +86,33 @@ data = [
     ("MEA", "MEA03", "Apakah pengelolaan informasi penjualan ditinjau berdasarkan ketentuan eksternal yang relevan?")
 ]
 
-# ==============================
-# FORM IDENTITAS DAN AUDIT
-# ==============================
+# ==================================================
+# FORM IDENTITAS DAN PERTANYAAN
+# ==================================================
 
-st.header("Identitas Pengisi Form")
+st.header("1. Identitas Pengisi Form")
 
 with st.form("form_audit"):
 
-    nama = st.text_input("Nama Lengkap")
+    nama = st.text_input("Nama Lengkap *")
+
     jabatan = st.text_input("Jabatan/Posisi")
+
     divisi = st.text_input("Bagian/Divisi")
 
     tanggal = st.date_input(
         "Tanggal Pengisian",
-        value=date.today()
+        value=date.today(),
+        format="DD/MM/YYYY"
     )
 
     st.divider()
 
-    st.header("Form Pertanyaan Audit")
+    st.header("2. Form Pertanyaan Audit")
+
     st.write(
-        "Pilih jawaban berdasarkan hasil pemeriksaan "
-        "dan bukti pendukung."
+        "Pilih satu jawaban untuk setiap pertanyaan. "
+        "Seluruh pertanyaan wajib dijawab."
     )
 
     jawaban = []
@@ -109,13 +125,14 @@ with st.form("form_audit"):
 
             if d == domain:
 
-                st.write(
+                st.markdown(
                     f"**{nomor}. [{kode}] {pertanyaan}**"
                 )
 
                 pilihan = st.radio(
                     "Pilih jawaban:",
-                    ["Ya", "Tidak", "N/A"],
+                    options=["Ya", "Tidak", "N/A"],
+                    index=None,
                     key=f"jawaban_{nomor}",
                     horizontal=True
                 )
@@ -128,65 +145,92 @@ with st.form("form_audit"):
                     "Jawaban": pilihan
                 })
 
+    st.divider()
+
     submit = st.form_submit_button(
         "Simpan dan Tampilkan Hasil Audit",
-        type="primary"
+        type="primary",
+        use_container_width=True
     )
 
-# ==============================
-# SIMPAN HASIL KE SESSION
-# ==============================
+# ==================================================
+# VALIDASI DAN PENYIMPANAN HASIL
+# ==================================================
 
 if submit:
 
+    # Hapus hasil sebelumnya jika ada pengiriman baru
+    st.session_state.pop("hasil_audit", None)
+
     if not nama.strip():
-        st.error("Nama pengisi form wajib diisi.")
+
+        st.error("Nama lengkap wajib diisi.")
+
+    elif len(jawaban) != 30:
+
+        st.error("Data pertanyaan tidak lengkap.")
+
+    elif any(item["Jawaban"] is None for item in jawaban):
+
+        jumlah_kosong = sum(
+            item["Jawaban"] is None for item in jawaban
+        )
+
+        st.error(
+            f"Masih ada {jumlah_kosong} pertanyaan "
+            "yang belum dijawab. Silakan lengkapi semuanya."
+        )
 
     else:
-        st.session_state["identitas_audit"] = {
-            "Nama": nama,
-            "Jabatan/Posisi": jabatan,
-            "Bagian/Divisi": divisi,
-            "Tanggal Pengisian": tanggal.strftime("%d-%m-%Y")
+
+        st.session_state["hasil_audit"] = {
+            "identitas": {
+                "Nama": nama.strip(),
+                "Jabatan/Posisi": jabatan.strip(),
+                "Bagian/Divisi": divisi.strip(),
+                "Tanggal Pengisian": tanggal.strftime("%d-%m-%Y")
+            },
+            "jawaban": pd.DataFrame(jawaban)
         }
 
-        st.session_state["jawaban_audit"] = pd.DataFrame(jawaban)
+        st.success("Seluruh jawaban berhasil disimpan!")
 
-        st.success("Jawaban audit berhasil diproses!")
-
-# ==============================
+# ==================================================
 # TAMPILKAN HASIL AUDIT
-# ==============================
+# ==================================================
 
-if "jawaban_audit" in st.session_state:
+if "hasil_audit" in st.session_state:
 
-    df = st.session_state["jawaban_audit"]
-    identitas = st.session_state["identitas_audit"]
+    hasil = st.session_state["hasil_audit"]
+
+    identitas = hasil["identitas"]
+    df = hasil["jawaban"]
 
     st.divider()
 
-    st.header("Identitas Pengisi")
+    st.header("3. Hasil Audit")
+
+    # IDENTITAS
+    st.subheader("Identitas Pengisi")
 
     col1, col2, col3 = st.columns(3)
 
-    col1.write("**Nama**")
-    col1.write(identitas["Nama"])
-
-    col2.write("**Jabatan/Posisi**")
-    col2.write(identitas["Jabatan/Posisi"] or "-")
-
-    col3.write("**Bagian/Divisi**")
-    col3.write(identitas["Bagian/Divisi"] or "-")
+    col1.metric("Nama", identitas["Nama"])
+    col2.metric(
+        "Jabatan",
+        identitas["Jabatan/Posisi"] or "-"
+    )
+    col3.metric(
+        "Bagian/Divisi",
+        identitas["Bagian/Divisi"] or "-"
+    )
 
     st.write(
         f"**Tanggal Pengisian:** "
         f"{identitas['Tanggal Pengisian']}"
     )
 
-    # ==============================
-    # REKAPITULASI
-    # ==============================
-
+    # HITUNG REKAPITULASI
     rekap = []
 
     for domain in ["EDM", "APO", "BAI", "DSS", "MEA"]:
@@ -196,16 +240,16 @@ if "jawaban_audit" in st.session_state:
         rekap.append({
             "Domain": domain,
             "Jumlah Pertanyaan": len(bagian),
-            "Ya": (bagian["Jawaban"] == "Ya").sum(),
-            "Tidak": (bagian["Jawaban"] == "Tidak").sum(),
-            "N/A": (bagian["Jawaban"] == "N/A").sum()
+            "Ya": int((bagian["Jawaban"] == "Ya").sum()),
+            "Tidak": int((bagian["Jawaban"] == "Tidak").sum()),
+            "N/A": int((bagian["Jawaban"] == "N/A").sum())
         })
 
     df_rekap = pd.DataFrame(rekap)
 
-    ya = (df["Jawaban"] == "Ya").sum()
-    tidak = (df["Jawaban"] == "Tidak").sum()
-    na = (df["Jawaban"] == "N/A").sum()
+    ya = int((df["Jawaban"] == "Ya").sum())
+    tidak = int((df["Jawaban"] == "Tidak").sum())
+    na = int((df["Jawaban"] == "N/A").sum())
 
     total_dinilai = ya + tidak
 
@@ -214,21 +258,18 @@ if "jawaban_audit" in st.session_state:
         if total_dinilai > 0 else 0
     )
 
-    # ==============================
     # DASHBOARD
-    # ==============================
-
-    st.header("Dashboard Hasil Audit")
+    st.subheader("Ringkasan Jawaban")
 
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Total Pertanyaan", len(df))
-    col2.metric("Jawaban Ya", int(ya))
-    col3.metric("Jawaban Tidak", int(tidak))
-    col4.metric("Jawaban N/A", int(na))
+    col2.metric("Jawaban Ya", ya)
+    col3.metric("Jawaban Tidak", tidak)
+    col4.metric("Jawaban N/A", na)
 
     st.metric(
-        "Indikator Jawaban Ya",
+        "Persentase Jawaban Ya",
         f"{persentase:.2f}%"
     )
 
@@ -238,23 +279,21 @@ if "jawaban_audit" in st.session_state:
         "Indikator ini bukan capability level resmi COBIT 5."
     )
 
-    # ==============================
     # GRAFIK
-    # ==============================
-
-    st.header("Grafik Rekapitulasi per Domain")
+    st.subheader("Grafik Hasil Audit per Domain")
 
     grafik = df_rekap.set_index("Domain")[
         ["Ya", "Tidak", "N/A"]
     ]
 
-    st.bar_chart(grafik)
+    st.bar_chart(
+        grafik,
+        y=["Ya", "Tidak", "N/A"],
+        use_container_width=True
+    )
 
-    # ==============================
-    # TABEL REKAPITULASI
-    # ==============================
-
-    st.header("Tabel Rekapitulasi Hasil Audit")
+    # REKAPITULASI
+    st.subheader("Rekapitulasi Hasil Audit")
 
     st.dataframe(
         df_rekap,
@@ -262,11 +301,8 @@ if "jawaban_audit" in st.session_state:
         hide_index=True
     )
 
-    # ==============================
-    # TABEL JAWABAN
-    # ==============================
-
-    st.header("Detail Jawaban Audit")
+    # DETAIL JAWABAN
+    st.subheader("Detail Jawaban 30 Pertanyaan")
 
     st.dataframe(
         df,
@@ -274,126 +310,286 @@ if "jawaban_audit" in st.session_state:
         hide_index=True
     )
 
-    
-# ==============================
-# DOWNLOAD LAPORAN AUDIT LENGKAP
-# ==============================
+    # ==================================================
+    # MEMBUAT FILE EXCEL LENGKAP
+    # ==================================================
 
-import io
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.chart import BarChart, Reference
+    def buat_excel(identitas, df, df_rekap, ya, tidak, na, persentase):
 
-output = io.BytesIO()
+        wb = Workbook()
 
-wb = Workbook()
-ws = wb.active
-ws.title = "Laporan Audit"
+        ws = wb.active
+        ws.title = "Laporan Audit"
 
-# JUDUL
-ws.merge_cells("A1:E1")
-ws["A1"] = "LAPORAN AUDIT SISTEM INFORMASI PENJUALAN COBIT 5"
-ws["A1"].font = Font(bold=True, size=14)
-
-# IDENTITAS
-ws["A3"] = "IDENTITAS PENGISI"
-ws["A3"].font = Font(bold=True, size=12)
-
-for row, (key, value) in enumerate(identitas.items(), start=4):
-    ws.cell(row=row, column=1, value=key)
-    ws.cell(row=row, column=2, value=value)
-
-# TABEL JAWABAN
-start = 10
-ws.cell(row=start, column=1, value="HASIL JAWABAN AUDIT")
-ws.cell(row=start, column=1).font = Font(bold=True, size=12)
-
-for col, header in enumerate(df.columns, start=1):
-    cell = ws.cell(row=start + 1, column=col, value=header)
-    cell.font = Font(bold=True)
-    cell.fill = PatternFill("solid", fgColor="D9EAF7")
-
-for r, row in enumerate(df.itertuples(index=False, name=None), start=start + 2):
-    for c, value in enumerate(row, start=1):
-        ws.cell(row=r, column=c, value=value)
-
-# REKAPITULASI
-rekap_start = start + len(df) + 4
-
-ws.cell(row=rekap_start, column=1, value="REKAPITULASI HASIL AUDIT")
-ws.cell(row=rekap_start, column=1).font = Font(bold=True, size=12)
-
-for col, header in enumerate(df_rekap.columns, start=1):
-    cell = ws.cell(row=rekap_start + 1, column=col, value=header)
-    cell.font = Font(bold=True)
-    cell.fill = PatternFill("solid", fgColor="D9EAF7")
-
-for r, row in enumerate(
-    df_rekap.itertuples(index=False, name=None),
-    start=rekap_start + 2
-):
-    for c, value in enumerate(row, start=1):
-        ws.cell(row=r, column=c, value=value)
-
-# GRAFIK DI SHEET KEDUA
-grafik_ws = wb.create_sheet("Grafik")
-
-grafik_ws.append(["Domain", "Ya", "Tidak", "N/A"])
-
-for _, row in df_rekap.iterrows():
-    grafik_ws.append([
-        row["Domain"],
-        int(row["Ya"]),
-        int(row["Tidak"]),
-        int(row["N/A"])
-    ])
-
-chart = BarChart()
-chart.type = "col"
-chart.title = "Grafik Hasil Audit per Domain"
-chart.y_axis.title = "Jumlah Jawaban"
-chart.x_axis.title = "Domain COBIT 5"
-
-chart_data = Reference(
-    grafik_ws,
-    min_col=2,
-    max_col=4,
-    min_row=1,
-    max_row=6
-)
-
-categories = Reference(
-    grafik_ws,
-    min_col=1,
-    min_row=2,
-    max_row=6
-)
-
-chart.add_data(chart_data, titles_from_data=True)
-chart.set_categories(categories)
-grafik_ws.add_chart(chart, "F2")
-
-# RAPATKAN KOLOM
-ws.column_dimensions["A"].width = 18
-ws.column_dimensions["B"].width = 22
-ws.column_dimensions["C"].width = 18
-ws.column_dimensions["D"].width = 75
-ws.column_dimensions["E"].width = 18
-
-for row in ws.iter_rows():
-    for cell in row:
-        cell.alignment = Alignment(
-            vertical="center",
-            wrap_text=True
+        # JUDUL
+        ws.merge_cells("A1:E1")
+        ws["A1"] = "LAPORAN AUDIT SISTEM INFORMASI PENJUALAN"
+        ws["A1"].font = Font(
+            bold=True,
+            size=14,
+            color="FFFFFF"
+        )
+        ws["A1"].fill = PatternFill(
+            "solid",
+            fgColor="1F4E78"
+        )
+        ws["A1"].alignment = Alignment(
+            horizontal="center"
         )
 
-# SIMPAN FILE
-wb.save(output)
-output.seek(0)
+        ws.merge_cells("A2:E2")
+        ws["A2"] = "CV Seleksi Alam Muria (Alammu)"
+        ws["A2"].alignment = Alignment(
+            horizontal="center"
+        )
 
-st.download_button(
-    label="📥 Unduh Laporan Audit Excel",
-    data=output.getvalue(),
-    file_name="Laporan_Audit_COBIT5.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)  
+        # IDENTITAS
+        ws["A4"] = "IDENTITAS PENGISI"
+        ws["A4"].font = Font(bold=True, size=12)
+
+        for row, (key, value) in enumerate(
+            identitas.items(), start=5
+        ):
+            ws.cell(row=row, column=1, value=key)
+            ws.cell(row=row, column=2, value=value)
+
+        # TABEL JAWABAN
+        ws["A10"] = "DETAIL JAWABAN AUDIT"
+        ws["A10"].font = Font(bold=True, size=12)
+
+        header_row = 11
+
+        for col, header in enumerate(df.columns, start=1):
+
+            cell = ws.cell(
+                row=header_row,
+                column=col,
+                value=header
+            )
+
+            cell.font = Font(
+                bold=True,
+                color="FFFFFF"
+            )
+
+            cell.fill = PatternFill(
+                "solid",
+                fgColor="4472C4"
+            )
+
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center",
+                wrap_text=True
+            )
+
+        for row_num, row_data in enumerate(
+            df.itertuples(index=False, name=None),
+            start=header_row + 1
+        ):
+
+            for col_num, value in enumerate(
+                row_data, start=1
+            ):
+
+                cell = ws.cell(
+                    row=row_num,
+                    column=col_num,
+                    value=value
+                )
+
+                cell.alignment = Alignment(
+                    vertical="top",
+                    wrap_text=True
+                )
+
+        # REKAPITULASI
+        recap_start = header_row + len(df) + 3
+
+        ws.cell(
+            row=recap_start,
+            column=1,
+            value="REKAPITULASI HASIL AUDIT"
+        ).font = Font(bold=True, size=12)
+
+        recap_header = recap_start + 1
+
+        for col, header in enumerate(
+            df_rekap.columns, start=1
+        ):
+
+            cell = ws.cell(
+                row=recap_header,
+                column=col,
+                value=header
+            )
+
+            cell.font = Font(
+                bold=True,
+                color="FFFFFF"
+            )
+
+            cell.fill = PatternFill(
+                "solid",
+                fgColor="4472C4"
+            )
+
+        for row_num, row_data in enumerate(
+            df_rekap.itertuples(index=False, name=None),
+            start=recap_header + 1
+        ):
+
+            for col_num, value in enumerate(
+                row_data, start=1
+            ):
+
+                ws.cell(
+                    row=row_num,
+                    column=col_num,
+                    value=value
+                )
+
+        # TOTAL
+        total_row = recap_header + len(df_rekap) + 1
+
+        ws.cell(total_row, 1, "TOTAL")
+        ws.cell(total_row, 2, len(df))
+        ws.cell(total_row, 3, ya)
+        ws.cell(total_row, 4, tidak)
+        ws.cell(total_row, 5, na)
+
+        for cell in ws[total_row]:
+            cell.font = Font(bold=True)
+
+        # PERSENTASE
+        percentage_row = total_row + 2
+
+        ws.cell(
+            percentage_row,
+            1,
+            "Persentase Jawaban Ya"
+        )
+
+        ws.cell(
+            percentage_row,
+            2,
+            f"{persentase:.2f}%"
+        )
+
+        # GRAFIK PADA SHEET KEDUA
+        grafik_ws = wb.create_sheet("Grafik")
+
+        grafik_ws.append([
+            "Domain",
+            "Ya",
+            "Tidak",
+            "N/A"
+        ])
+
+        for _, row in df_rekap.iterrows():
+
+            grafik_ws.append([
+                row["Domain"],
+                int(row["Ya"]),
+                int(row["Tidak"]),
+                int(row["N/A"])
+            ])
+
+        for cell in grafik_ws[1]:
+
+            cell.font = Font(
+                bold=True,
+                color="FFFFFF"
+            )
+
+            cell.fill = PatternFill(
+                "solid",
+                fgColor="4472C4"
+            )
+
+        chart = BarChart()
+
+        chart.type = "col"
+        chart.style = 10
+        chart.title = "Grafik Hasil Audit COBIT 5"
+        chart.y_axis.title = "Jumlah Jawaban"
+        chart.x_axis.title = "Domain"
+
+        chart_data = Reference(
+            grafik_ws,
+            min_col=2,
+            max_col=4,
+            min_row=1,
+            max_row=6
+        )
+
+        categories = Reference(
+            grafik_ws,
+            min_col=1,
+            min_row=2,
+            max_row=6
+        )
+
+        chart.add_data(
+            chart_data,
+            titles_from_data=True
+        )
+
+        chart.set_categories(categories)
+
+        chart.height = 10
+        chart.width = 20
+
+        grafik_ws.add_chart(chart, "F2")
+
+        # ATUR LEBAR KOLOM
+        lebar = {
+            "A": 12,
+            "B": 14,
+            "C": 14,
+            "D": 85,
+            "E": 18
+        }
+
+        for kolom, ukuran in lebar.items():
+            ws.column_dimensions[kolom].width = ukuran
+
+        ws.freeze_panes = "A12"
+        ws.auto_filter.ref = f"A11:E{header_row + len(df)}"
+
+        # SIMPAN
+        output = io.BytesIO()
+
+        wb.save(output)
+        output.seek(0)
+
+        return output.getvalue()
+
+    # GENERATE EXCEL
+    file_excel = buat_excel(
+        identitas,
+        df,
+        df_rekap,
+        ya,
+        tidak,
+        na,
+        persentase
+    )
+
+    # TOMBOL DOWNLOAD
+    st.divider()
+
+    st.header("4. Unduh Laporan Audit")
+
+    st.download_button(
+        label="📥 Unduh Laporan Audit Excel",
+        data=file_excel,
+        file_name="Laporan_Audit_COBIT5_Alammu.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+    st.success(
+        "Laporan Excel berisi identitas, 30 pertanyaan, "
+        "jawaban, rekapitulasi, dan grafik."
+    )
